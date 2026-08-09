@@ -1,0 +1,40 @@
+{
+  "description": "Archive visible chats to Obsidian and retrieve bounded local context.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/obsidian_memory.py\" --host auto hook",
+            "timeout": 5,
+            "statusMessage": "Searching local Obsidian memory"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/obsidian_memory.py\" --host auto hook",
+            "timeout": 5,
+            "statusMessage": "Saving visible chat to Obsidian"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PLUGIN_ROOT/scripts/obsidian_memory.py\" --host auto hook",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

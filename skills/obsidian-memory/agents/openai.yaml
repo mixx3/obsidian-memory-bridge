@@ -1,0 +1,4 @@
+interface:
+  display_name: "Obsidian Memory Bridge"
+  short_description: "Локальная память для Codex и Claude"
+  default_prompt: "Use $obsidian-memory to set up or diagnose local Obsidian memory for Codex and Claude Code."
