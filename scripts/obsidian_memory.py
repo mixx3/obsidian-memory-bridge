@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import math
 import os
@@ -24,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 
 DEFAULT_CONFIGS = {
@@ -39,7 +40,7 @@ MAX_CURATION_CONTEXT_CHARS = 180_000
 MAX_CURATION_FILES = 24
 MAX_CURATION_WRITE_CHARS = 500_000
 LOCAL_MARKDOWN_LINK_RE = re.compile(
-    r"(?P<prefix>!?\[[^\]\n]*\]\()(?P<target><[^>\n]+>|/[^)\s\n]+)(?P<suffix>\))"
+    r"(?P<prefix>!?\[[^\]\n]*\]\()(?P<target><[^>\n]+>|[^)\s\n]+)(?P<suffix>\))"
 )
 WORD_RE = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
 SECRET_PATTERNS = (
@@ -79,6 +80,7 @@ class Config:
     agent_label: str
     chat_dir: str
     curation_chat_dirs: list[str]
+    codex_transcript_dirs: list[Path]
     search_dirs: list[str]
     state_dir: Path
     entity_rules: str
@@ -107,12 +109,17 @@ def load_config(path: Path) -> Config:
     default_chat_dir = "Claude Memory/Chats" if agent_id == "claude" else "Codex Memory/Chats"
     chat_dir = str(raw.get("chat_dir", default_chat_dir))
     curation_chat_dirs = raw.get("curation_chat_dirs") or [chat_dir]
+    codex_transcript_dirs = raw.get("codex_transcript_dirs") or []
     return Config(
         vault=vault,
         agent_id=agent_id,
         agent_label=str(raw.get("agent_label") or agent_id.title()),
         chat_dir=chat_dir,
         curation_chat_dirs=[str(item) for item in curation_chat_dirs],
+        codex_transcript_dirs=[
+            Path(os.path.expandvars(os.path.expanduser(str(item)))).resolve()
+            for item in codex_transcript_dirs
+        ],
         search_dirs=list(
             raw.get(
                 "search_dirs",
@@ -153,25 +160,96 @@ def redact(text: str) -> str:
     return result
 
 
+def local_path_from_link_target(target: str) -> Path | None:
+    """Resolve absolute and prior VS Code file links without following URLs."""
+    if target.startswith("<") and target.endswith(">"):
+        target = target[1:-1]
+    if target.startswith("vscode://file/"):
+        target = "/" + target.removeprefix("vscode://file/")
+    if not target.startswith("/"):
+        return None
+    return Path(unquote(target))
+
+
+def import_markdown_document(path: Path, config: Config) -> Path | None:
+    """Copy an explicitly linked Markdown document into the vault as a node."""
+    if path.suffix.casefold() != ".md" or not path.is_file():
+        return None
+    try:
+        source = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    source = source[: config.max_file_chars]
+    digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:12]
+    filename = clean_title(path.stem, limit=60) or "Документ"
+    relative = Path("Imported/Local Markdown") / f"{filename} — {digest}.md"
+    target = config.vault / relative
+    content = "\n".join(
+        [
+            "---",
+            "type: imported-document",
+            f"source_path: {safe_yaml_string(str(path))}",
+            "---",
+            "",
+            f"# {path.stem}",
+            "",
+            redact(source) if config.redact_secrets else source,
+            "",
+        ]
+    )
+    try:
+        if target.read_text(encoding="utf-8") == content:
+            return relative
+    except OSError:
+        pass
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(target.suffix + ".tmp")
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(target)
+    except OSError:
+        return None
+    return relative
+
+
+def materialize_markdown_links(text: str, config: Config) -> tuple[str, int]:
+    """Replace local Markdown-document links with internal Obsidian links."""
+    changed = 0
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal changed
+        path = local_path_from_link_target(match.group("target"))
+        if path is None or path.suffix.casefold() != ".md":
+            return match.group(0)
+        relative = import_markdown_document(path, config)
+        if relative is None:
+            return match.group(0)
+        label = match.group("prefix").removeprefix("![").removeprefix("[").removesuffix("](")
+        changed += 1
+        return f"[[{relative.with_suffix('')}|{label}]]"
+
+    return LOCAL_MARKDOWN_LINK_RE.sub(replace, text), changed
+
+
 def normalize_local_file_links(text: str) -> tuple[str, int]:
-    """Turn absolute local Markdown links into external VS Code URLs.
+    """Turn absolute local code and data links into external VS Code URLs.
 
     Obsidian otherwise treats absolute filesystem paths as unresolved vault
-    links and renders every referenced source/image as a graph vertex.
+    links. Markdown documents are deliberately excluded: they are imported as
+    ordinary vault notes by ``materialize_markdown_links``.
     """
     changed = 0
 
     def replace(match: re.Match[str]) -> str:
         nonlocal changed
         target = match.group("target")
-        if target.startswith("<") and target.endswith(">"):
-            target = target[1:-1]
-        if not target.startswith("/"):
+        path = local_path_from_link_target(target)
+        if path is None or path.suffix.casefold() == ".md":
             return match.group(0)
         prefix = match.group("prefix")
         if prefix.startswith("!["):
             prefix = prefix[1:]
-        encoded = quote(target, safe="/%:@-._~")
+        encoded = quote(str(path), safe="/%:@-._~")
         changed += 1
         return f"{prefix}vscode://file{encoded}{match.group('suffix')}"
 
@@ -340,6 +418,7 @@ def render_chat(
             phase = f" · {message.phase}" if message.phase else ""
             heading = f"## {config.agent_label}{phase} · {stamp}"
         body = redact(message.text) if config.redact_secrets else message.text
+        body, _ = materialize_markdown_links(body, config)
         body, _ = normalize_local_file_links(body)
         lines.extend([heading, "", body, ""])
     return target, "\n".join(lines).rstrip() + "\n"
@@ -351,10 +430,23 @@ def export_transcript(path: Path, config: Config) -> Path | None:
     metadata, messages = read_transcript(path)
     if metadata.get("thread_source") == "subagent":
         return None
+    # The desktop JSONL format does not reliably expose a turn ID for every
+    # visible message. Treat an opt-out as session-wide, which is conservative:
+    # no marked content can enter the raw archive.
+    if any(
+        message.role == "user" and "#no-archive" in message.text.casefold()
+        for message in messages
+    ):
+        return None
     if not messages:
         return None
     target, content = render_chat(metadata, messages, config, path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if target.read_text(encoding="utf-8") == content:
+            return target
+    except OSError:
+        pass
     temporary = target.with_suffix(target.suffix + ".tmp")
     temporary.write_text(content, encoding="utf-8")
     temporary.replace(target)
@@ -620,8 +712,28 @@ def read_curation_state(config: Config) -> dict[str, Any]:
     return {"version": 1, "last_run": "1970-01-01T00:00:00+00:00"}
 
 
+def sync_codex_transcripts(config: Config) -> None:
+    """Export local Codex UI transcripts before scanning curation inputs.
+
+    Desktop sessions are persisted as JSONL even when a SessionEnd hook was
+    missed. Exporting them here makes scheduled curation complete without
+    repeatedly touching unchanged Markdown notes.
+    """
+    if config.agent_id != "codex":
+        return
+    for root in config.codex_transcript_dirs:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.jsonl")):
+            try:
+                export_transcript(path, config)
+            except OSError:
+                continue
+
+
 def build_curation_context(config: Config) -> tuple[str, str, list[str]]:
     """Build a bounded, read-only bundle for the scheduled memory curator."""
+    sync_codex_transcripts(config)
     state = read_curation_state(config)
     last_run = parse_timestamp(str(state.get("last_run") or ""))
     last_timestamp = last_run.timestamp()
@@ -929,8 +1041,9 @@ def normalize_existing_chat_links(config: Config) -> tuple[int, int, Path | None
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        normalized, count = normalize_local_file_links(text)
-        if not count or normalized == text:
+        materialized, materialized_count = materialize_markdown_links(text, config)
+        normalized, count = normalize_local_file_links(materialized)
+        if (not materialized_count and not count) or normalized == text:
             continue
         relative = path.relative_to(config.vault)
         backup = backup_root / relative
@@ -940,7 +1053,7 @@ def normalize_existing_chat_links(config: Config) -> tuple[int, int, Path | None
         temporary.write_text(normalized, encoding="utf-8")
         temporary.replace(path)
         changed_files += 1
-        changed_links += count
+        changed_links += materialized_count + count
     return changed_files, changed_links, backup_root if changed_files else None
 
 
