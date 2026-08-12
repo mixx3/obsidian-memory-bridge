@@ -38,7 +38,25 @@ Codex includes `turn_id`; Claude Code does not. The bridge stores an active turn
 
 ## Daily curation
 
-Schedule one local prompt containing `#obsidian-curate-daily`. The bridge supplies new chats from both `Codex Memory/Chats/` and `Claude Memory/Chats/`, applies only paths below `Memory/`, updates the curation watermark, and creates a local commit when files changed.
+Schedule one local prompt containing `#obsidian-curate-daily`. Before building
+the curation bundle, the Codex bridge synchronizes visible local desktop JSONL
+sessions from `~/.codex/sessions/` and `~/.codex/archived_sessions/` into
+`Codex Memory/Chats/`. It then supplies new chats from both `Codex
+Memory/Chats/` and `Claude Memory/Chats/`, applies only paths below `Memory/`,
+updates the curation watermark, and creates a local commit when files changed.
+
+During curation, retain durable projects, people, tools, concepts, decisions,
+preferences, and workflows as linked Markdown entities under `Memory/`. A raw
+chat remains the source note; do not manufacture entities for a one-off
+question or unfinished task. The JSONL fallback treats `#no-archive`
+conservatively as a session-wide opt-out because the desktop format does not
+reliably identify every turn.
+
+Links follow a split rule: code and non-Markdown local files open through
+`vscode://file/...`; explicitly linked local `.md` documents are copied to
+`Imported/Local Markdown/` and rewritten as ordinary Obsidian links. Run
+`python3 scripts/obsidian_memory.py --host codex normalize-links` once after
+upgrading to migrate existing chat links.
 
 Do not run two daily curators against the same vault. Capture and retrieval may run concurrently; curation is the single-writer consolidation step.
 
