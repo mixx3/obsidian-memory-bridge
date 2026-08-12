@@ -52,6 +52,87 @@ def run_hook(config: Path, host: str, event: dict[str, object]) -> subprocess.Co
 
 
 class BridgeTests(unittest.TestCase):
+    def test_local_markdown_link_is_imported_into_vault(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "study.md"
+            source.write_text("# Study\n\nExam outline.\n", encoding="utf-8")
+            config = bridge.load_config(write_config(root, "codex"))
+            text, changed = bridge.materialize_markdown_links(
+                f"[Study notes]({source})", config
+            )
+            self.assertEqual(changed, 1)
+            self.assertIn("[[Imported/Local Markdown/", text)
+            imported = list((root / "vault/Imported/Local Markdown").glob("*.md"))
+            self.assertEqual(len(imported), 1)
+            self.assertIn("Exam outline.", imported[0].read_text(encoding="utf-8"))
+
+    def test_curation_syncs_local_codex_transcript_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "sessions"
+            sessions.mkdir()
+            transcript = sessions / "study.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "session_meta",
+                                "timestamp": "2026-08-12T10:00:00+00:00",
+                                "payload": {"id": "study-session", "cwd": "/tmp/study"},
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "timestamp": "2026-08-12T10:00:01+00:00",
+                                "payload": {"type": "user_message", "message": "Prepare for philosophy exam."},
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "timestamp": "2026-08-12T10:00:02+00:00",
+                                "payload": {"type": "agent_message", "message": "I will make a study plan."},
+                            }
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            config_path = write_config(root, "codex")
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            raw["codex_transcript_dirs"] = [str(sessions)]
+            config_path.write_text(json.dumps(raw), encoding="utf-8")
+            config = bridge.load_config(config_path)
+
+            bridge.build_curation_context(config)
+            notes = list((root / "vault/Codex Memory/Chats").rglob("*.md"))
+            self.assertEqual(len(notes), 1)
+            first_mtime = notes[0].stat().st_mtime_ns
+            bridge.build_curation_context(config)
+            self.assertEqual(notes[0].stat().st_mtime_ns, first_mtime)
+
+    def test_transcript_opt_out_is_not_exported(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            transcript = root / "private.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "session_meta", "payload": {"id": "private"}}),
+                        json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": "#no-archive private request"}}),
+                        json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": "Private answer."}}),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            config = bridge.load_config(write_config(root, "codex"))
+            self.assertIsNone(bridge.export_transcript(transcript, config))
+
     def test_claude_turn_without_turn_id_is_archived(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

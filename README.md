@@ -2,7 +2,12 @@
 
 Local-first, auditable memory shared by Codex and Claude Code.
 
-It archives only visible user/assistant turns to an Obsidian vault, retrieves a small amount of relevant context for later prompts, curates durable entities on a schedule, and keeps curated knowledge in local Git history. Raw chats, tool logs, hidden reasoning, environment variables, and secrets are not intended for Git.
+It archives only visible user/assistant turns to an Obsidian vault, synchronizes
+local Codex desktop sessions before scheduled curation, retrieves a small
+amount of relevant context for later prompts, curates durable linked entities
+on a schedule, and keeps curated knowledge in local Git history. Raw chats,
+tool logs, hidden reasoning, environment variables, and secrets are not
+intended for Git.
 
 ## Quick start
 
@@ -17,6 +22,8 @@ python3 scripts/install.py --doctor
 The installer backs up and merges existing hook settings. It does not overwrite unrelated Claude or Codex configuration and never creates a Git remote for the vault.
 
 Use `#no-archive` to exclude a turn and `#no-memory` to skip retrieval.
+Code links remain in VS Code; explicitly linked local Markdown documents are
+materialized inside the vault as Obsidian notes.
 
 ## Components
 
