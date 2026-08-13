@@ -41,7 +41,7 @@ AGENT_META = {
 
 
 def timestamp() -> str:
-    return dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    return dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 
 
 def parse_agents(value: str) -> list[str]:
@@ -71,6 +71,40 @@ def backup_file(path: Path, dry_run: bool) -> Path | None:
         else:
             shutil.copy2(path, backup, follow_symlinks=False)
     return backup
+
+
+def backup_to(path: Path, backup: Path, dry_run: bool) -> Path | None:
+    if not path.exists():
+        return None
+    if not dry_run:
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_dir() and not path.is_symlink():
+            shutil.copytree(path, backup)
+        else:
+            shutil.copy2(path, backup, follow_symlinks=False)
+    return backup
+
+
+def relocate_discoverable_skill_backups(home: Path, dry_run: bool) -> list[Path]:
+    """Move legacy backups outside agent skill discovery roots."""
+    destination = home / ".local/share/obsidian-memory-bridge/backups/legacy-skills"
+    moved: list[Path] = []
+    roots = [home / ".agents/skills", home / ".claude/skills"]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for source in sorted(root.glob("obsidian-memory.obsidian-memory-backup-*")):
+            agent = "codex" if root.parts[-2:] == (".agents", "skills") else "claude"
+            target = destination / f"{agent}-{source.name}"
+            suffix = 1
+            while target.exists():
+                target = destination / f"{agent}-{source.name}-{suffix}"
+                suffix += 1
+            if not dry_run:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(source), str(target))
+            moved.append(target)
+    return moved
 
 
 def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
@@ -217,7 +251,13 @@ def install_runtime(home: Path, dry_run: bool) -> Path:
 
 def install_skill(home: Path, agent: str, dry_run: bool) -> Path | None:
     target = home / AGENT_META[agent]["skill"]
-    backup = backup_file(target, dry_run)
+    backup = (
+        home
+        / ".local/share/obsidian-memory-bridge/backups"
+        / timestamp()
+        / f"{agent}-skill"
+    )
+    backup = backup_to(target, backup, dry_run)
     if dry_run:
         return backup
     if target.is_symlink() or target.is_file():
@@ -324,6 +364,8 @@ def install(
     print(f"vault: {vault}")
     print(f"agents: {', '.join(agents)}")
     print(f"mode: {'dry-run' if dry_run else 'install'}")
+    for relocated in relocate_discoverable_skill_backups(home, dry_run):
+        print(f"relocated-backup: {relocated}")
     ensure_vault(vault, dry_run)
     installed_bridge = install_runtime(home, dry_run)
     print(f"bridge: {installed_bridge}")

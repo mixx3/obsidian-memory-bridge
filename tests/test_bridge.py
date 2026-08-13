@@ -296,6 +296,38 @@ class BridgeTests(unittest.TestCase):
             self.assertTrue((vault / "Memory/log.md").is_file())
             self.assertTrue((vault / ".git").is_dir())
 
+    def test_installer_keeps_skill_backups_outside_discovery_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            vault = root / "vault"
+            command = [
+                sys.executable,
+                str(INSTALL_PATH),
+                "--home",
+                str(home),
+                "--vault",
+                str(vault),
+                "--agents",
+                "codex,claude",
+            ]
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            legacy = home / ".agents/skills/obsidian-memory.obsidian-memory-backup-old"
+            legacy.mkdir()
+            (legacy / "SKILL.md").write_text("legacy\n", encoding="utf-8")
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            self.assertEqual(
+                list((home / ".agents/skills").glob("obsidian-memory.obsidian-memory-backup-*")),
+                [],
+            )
+            self.assertEqual(
+                list((home / ".claude/skills").glob("obsidian-memory.obsidian-memory-backup-*")),
+                [],
+            )
+            backups = home / ".local/share/obsidian-memory-bridge/backups"
+            self.assertTrue(any(path.name == "codex-skill" for path in backups.rglob("*")))
+            self.assertTrue(any("backup-old" in path.name for path in backups.rglob("*")))
+
     def test_curation_commit_leaves_unrelated_change_unstaged(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
