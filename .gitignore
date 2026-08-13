@@ -5,3 +5,4 @@ __pycache__/
 .test-home/
 .test-vault/
 dist/
+.zprofile

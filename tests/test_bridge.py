@@ -12,6 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE_PATH = ROOT / "scripts" / "obsidian_memory.py"
 INSTALL_PATH = ROOT / "scripts" / "install.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import okf
 
 spec = importlib.util.spec_from_file_location("obsidian_memory_bridge", BRIDGE_PATH)
 assert spec and spec.loader
@@ -187,6 +190,62 @@ class BridgeTests(unittest.TestCase):
             self.assertIn("titanium frame", context)
             self.assertLessEqual(len(context), 9000)
 
+    def test_retrieval_surfaces_okf_trust_and_staleness(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = write_config(root, "codex")
+            memory = root / "vault/Memory/Entities/Concepts"
+            memory.mkdir(parents=True)
+            (memory / "Blue Prototype.md").write_text(
+                "---\ntype: Concept\ntitle: Blue Prototype\n"
+                "description: A time-sensitive prototype record.\nstatus: stable\n"
+                "stale_after: 2000-01-01\ngenerated:\n  by: test/1\n"
+                "  at: 2000-01-01T00:00:00Z\nverified:\n"
+                "  by: human:tester\n  at: 2000-01-02T00:00:00Z\n---\n\n"
+                "# Blue Prototype\n\nThe blue prototype uses a titanium frame.\n",
+                encoding="utf-8",
+            )
+            result = run_hook(
+                config,
+                "codex",
+                {
+                    "session_id": "codex-session-okf",
+                    "turn_id": "turn-okf",
+                    "cwd": "/tmp/project",
+                    "hook_event_name": "UserPromptSubmit",
+                    "prompt": "What frame does the blue prototype use?",
+                },
+            )
+            context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("trust=human-reviewed", context)
+            self.assertIn("stale since 2000-01-01", context)
+
+    def test_curation_payload_rejects_nonportable_wikilinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config_path = write_config(root, "codex")
+            config = bridge.load_config(config_path)
+            state = {
+                "turns": {
+                    "turn": {
+                        "curation_until": "2026-08-13T00:00:00Z",
+                        "curation_inputs": [],
+                    }
+                }
+            }
+            content = (
+                "---\ntype: Concept\ntitle: Blue Prototype\n"
+                "description: A durable prototype record.\nstatus: stable\n"
+                "generated:\n  by: test/1\n  at: 2026-08-13T00:00:00Z\n"
+                "---\n\n# Blue Prototype\n\nSee [[Memory/Other]].\n"
+            )
+            message = (
+                '<obsidian-curation-v1>{"files":[{"path":"Memory/Blue.md",'
+                f'"content":{json.dumps(content)}}}]}}</obsidian-curation-v1>'
+            )
+            with self.assertRaisesRegex(ValueError, "wikilink"):
+                bridge.apply_curation_payload(message, config, state, "turn")
+
     def test_installer_preserves_unrelated_claude_settings(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -232,6 +291,9 @@ class BridgeTests(unittest.TestCase):
                 self.assertEqual(len(handlers), 1)
             self.assertTrue((home / ".agents/skills/obsidian-memory/SKILL.md").is_file())
             self.assertTrue((home / ".claude/skills/obsidian-memory/SKILL.md").is_file())
+            self.assertTrue((home / ".local/share/obsidian-memory-bridge/okf.py").is_file())
+            self.assertTrue((vault / "Memory/index.md").is_file())
+            self.assertTrue((vault / "Memory/log.md").is_file())
             self.assertTrue((vault / ".git").is_dir())
 
     def test_curation_commit_leaves_unrelated_change_unstaged(self) -> None:
@@ -240,9 +302,9 @@ class BridgeTests(unittest.TestCase):
             config_path = write_config(root, "codex")
             vault = root / "vault"
             curated = vault / "Memory/Preferences/Test.md"
-            log = vault / "Memory/Curation/Log.md"
+            log = vault / "Memory/log.md"
             curated.parent.mkdir(parents=True)
-            log.parent.mkdir(parents=True)
+            log.parent.mkdir(parents=True, exist_ok=True)
             curated.write_text("before\n", encoding="utf-8")
             log.write_text("# Log\n", encoding="utf-8")
             readme = vault / "README.md"
@@ -284,6 +346,69 @@ class BridgeTests(unittest.TestCase):
             self.assertIn("Memory/Preferences/Test.md", names)
             self.assertNotIn("README.md", names)
             self.assertIn("README.md", status)
+
+    def test_okf_migration_is_backed_up_and_strictly_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            vault = Path(temporary) / "vault"
+            memory = vault / "Memory"
+            concept = memory / "Entities/Projects/Blue Prototype.md"
+            chat = vault / "Codex Memory/Chats/2026/08/source.md"
+            concept.parent.mkdir(parents=True)
+            chat.parent.mkdir(parents=True)
+            chat.write_text("---\ntype: conversation\n---\n# Chat\n", encoding="utf-8")
+            (memory / "Curation").mkdir(parents=True)
+            (memory / "Index.md").write_text(
+                "---\ntype: index\nupdated: 2026-08-01\n---\n\n"
+                "# Memory\n\n- [[Memory/Entities/Projects/Blue Prototype|Blue Prototype]]\n",
+                encoding="utf-8",
+            )
+            (memory / "Curation/Log.md").write_text(
+                "---\ntype: curation-log\nupdated: 2026-08-01\n---\n\n"
+                "# History\n\n## 2026-08-01 — initial\n\n"
+                "- [[Codex Memory/Chats/2026/08/source|Source]]\n",
+                encoding="utf-8",
+            )
+            concept.write_text(
+                "---\ntype: project\nstatus: active\nupdated: 2026-08-01\n---\n\n"
+                "# Blue Prototype\n\nThe blue prototype uses a titanium frame.\n\n"
+                "## Источник\n\n- [[Codex Memory/Chats/2026/08/source|Design chat]]\n",
+                encoding="utf-8",
+            )
+
+            result = okf.migrate_bundle(vault)
+
+            self.assertIsNotNone(result.backup)
+            self.assertTrue(Path(result.backup or "").is_dir())
+            self.assertTrue((memory / "index.md").is_file())
+            self.assertTrue((memory / "log.md").is_file())
+            self.assertTrue((memory / "Curation/History.md").is_file())
+            migrated = concept.read_text(encoding="utf-8")
+            self.assertIn("status: stable", migrated)
+            self.assertIn("memory_status: \"active\"", migrated)
+            self.assertIn("generated:", migrated)
+            self.assertIn("sources:", migrated)
+            self.assertNotIn("[[", migrated)
+            issues = okf.validate_bundle(memory, strict=True)
+            self.assertFalse([item for item in issues if item.level == "error"], issues)
+            second = okf.migrate_bundle(vault)
+            self.assertEqual(second.changed, [])
+            self.assertEqual(second.removed, [])
+
+    def test_okf_validator_rejects_invalid_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = Path(temporary) / "Memory"
+            bundle.mkdir()
+            (bundle / "index.md").write_text(
+                '---\nokf_version: "0.2"\n---\n\n# Memory\n', encoding="utf-8"
+            )
+            concept = bundle / "Project.md"
+            concept.write_text(
+                "---\ntype: Project\ntitle: Project\ndescription: A durable project.\n"
+                "status: active\n---\n\n# Project\n",
+                encoding="utf-8",
+            )
+            issues = okf.validate_bundle(bundle, strict=True)
+            self.assertIn("status", {item.code for item in issues if item.level == "error"})
 
 
 if __name__ == "__main__":

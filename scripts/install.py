@@ -17,6 +17,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE_SOURCE = ROOT / "scripts" / "obsidian_memory.py"
+OKF_SOURCE = ROOT / "scripts" / "okf.py"
 SKILL_SOURCE = ROOT / "skills" / "obsidian-memory"
 EVENTS = ("UserPromptSubmit", "Stop", "SessionEnd")
 AGENT_META = {
@@ -148,7 +149,7 @@ def merge_hooks(
 
 def agent_config(home: Path, vault: Path, agent: str) -> dict[str, Any]:
     meta = AGENT_META[agent]
-    return {
+    result = {
         "vault": str(vault),
         "agent_id": agent,
         "agent_label": meta["label"],
@@ -168,6 +169,12 @@ def agent_config(home: Path, vault: Path, agent: str) -> dict[str, Any]:
         "git_author_name": "Obsidian Memory Curator",
         "git_author_email": "obsidian-memory@local",
     }
+    if agent == "codex":
+        result["codex_transcript_dirs"] = [
+            str(home / ".codex/sessions"),
+            str(home / ".codex/archived_sessions"),
+        ]
+    return result
 
 
 def merge_config(existing: dict[str, Any], generated: dict[str, Any]) -> dict[str, Any]:
@@ -202,7 +209,9 @@ def install_runtime(home: Path, dry_run: bool) -> Path:
     if not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(BRIDGE_SOURCE, target)
+        shutil.copy2(OKF_SOURCE, target.parent / "okf.py")
         target.chmod(0o755)
+        (target.parent / "okf.py").chmod(0o755)
     return target
 
 
@@ -242,16 +251,28 @@ def ensure_vault(vault: Path, dry_run: bool) -> None:
             (vault / relative).mkdir(parents=True, exist_ok=True)
 
     initial_files: dict[str, str] = {
-        "Memory/Index.md": "# Memory\n\nDurable, curated memory shared by local agents.\n",
+        "Memory/index.md": (
+            '---\nokf_version: "0.2"\n---\n\n# Memory\n\n'
+            "Durable, curated memory shared by local agents.\n"
+        ),
         "Memory/Schema.md": (
-            "# Memory schema\n\nGenerated durable pages live below `Memory/`. "
+            "---\ntype: Schema\ntitle: Memory schema\n"
+            "description: OKF schema for durable agent memory.\nstatus: stable\n"
+            "generated:\n  by: process:obsidian-memory-installer\n"
+            f"  at: {dt.datetime.now(dt.timezone.utc).isoformat()}\n---\n\n"
+            "# Memory schema\n\nGenerated durable pages live below `Memory/` as OKF v0.2 concepts. "
             "Raw visible chats remain in agent-specific chat directories.\n"
         ),
         "Memory/entity-rules.json": '{\n  "version": 1,\n  "entities": []\n}\n',
         "Memory/project-bindings.json": '{\n  "version": 1,\n  "bindings": []\n}\n',
         "Memory/Curation/README.md": (
-            "# Curation\n\nState and audit log for the single daily curator.\n"
+            "---\ntype: Workflow\ntitle: Daily memory curation\n"
+            "description: Consolidate visible chats into durable OKF concepts.\n"
+            "status: stable\ngenerated:\n  by: process:obsidian-memory-installer\n"
+            f"  at: {dt.datetime.now(dt.timezone.utc).isoformat()}\n---\n\n"
+            "# Curation\n\nState for the single daily curator.\n"
         ),
+        "Memory/log.md": "# Knowledge Bundle Update Log\n",
         ".obsidian/graph.json": '{\n  "hideUnresolved": true\n}\n',
     }
     if not dry_run:
@@ -336,8 +357,10 @@ def doctor(home: Path, agents: list[str]) -> int:
     home = home.expanduser().resolve()
     installed_bridge = home / ".local/share/obsidian-memory-bridge/obsidian_memory.py"
     failures = 0
-    print(f"bridge: {'ok' if installed_bridge.is_file() else 'missing'}")
-    failures += not installed_bridge.is_file()
+    installed_okf = installed_bridge.parent / "okf.py"
+    runtime_ok = installed_bridge.is_file() and installed_okf.is_file()
+    print(f"bridge: {'ok' if runtime_ok else 'missing'}")
+    failures += not runtime_ok
     vaults: set[Path] = set()
     for agent in agents:
         meta = AGENT_META[agent]

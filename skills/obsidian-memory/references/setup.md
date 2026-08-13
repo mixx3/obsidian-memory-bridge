@@ -19,6 +19,8 @@ Add `--init-git` only when the user requests local Git history. The installer ne
 - Merges three command hooks into `~/.codex/hooks.json` and/or `~/.claude/settings.json`.
 - Writes a per-agent config containing only vault paths and limits.
 - Creates missing vault directories and minimal schema files without overwriting existing notes.
+- Initializes new `Memory/` directories as OKF v0.2 bundles; existing memories
+  require the explicit, backed-up `okf-migrate` command.
 - Adds raw chat directories, state, and archives to `.gitignore`.
 
 Existing JSON settings are backed up before mutation. Hook groups unrelated to Obsidian Memory Bridge are preserved.
@@ -58,6 +60,9 @@ Links follow a split rule: code and non-Markdown local files open through
 `python3 scripts/obsidian_memory.py --host codex normalize-links` once after
 upgrading to migrate existing chat links.
 
+The curator writes OKF v0.2 concepts, never invents `verified`, records source
+provenance, and appends an entry to the hook-managed `Memory/log.md`.
+
 Do not run two daily curators against the same vault. Capture and retrieval may run concurrently; curation is the single-writer consolidation step.
 
 ## Troubleshooting
@@ -66,6 +71,7 @@ Run:
 
 ```bash
 python3 scripts/install.py --doctor
+python3 scripts/obsidian_memory.py --host codex okf-validate --strict
 ```
 
 Then inspect `/hooks` in Codex or Claude Code. Codex requires changed non-managed hooks to be reviewed and trusted. Claude Code normally reloads changes to `settings.json` automatically; restart it when the top-level skills directory was created after the session started.

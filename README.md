@@ -1,6 +1,6 @@
 # Obsidian Memory Bridge
 
-Local-first, auditable memory shared by Codex and Claude Code.
+Local-first, auditable OKF v0.2 memory shared by Codex and Claude Code.
 
 It archives only visible user/assistant turns to an Obsidian vault, synchronizes
 local Codex desktop sessions before scheduled curation, retrieves a small
@@ -12,11 +12,19 @@ intended for Git.
 ## Quick start
 
 ```bash
-git clone https://github.com/parfenovma/obsidian-memory-bridge.git
+git clone https://github.com/mixx3/obsidian-memory-bridge.git
 cd obsidian-memory-bridge
 python3 scripts/install.py --vault /absolute/path/to/your-vault --agents codex,claude --dry-run
 python3 scripts/install.py --vault /absolute/path/to/your-vault --agents codex,claude --init-git
 python3 scripts/install.py --doctor
+```
+
+Existing curated memories can be migrated with a recoverable backup:
+
+```bash
+python3 scripts/obsidian_memory.py --host codex okf-migrate --dry-run
+python3 scripts/obsidian_memory.py --host codex okf-migrate
+python3 scripts/obsidian_memory.py --host codex okf-validate --strict
 ```
 
 The installer backs up and merges existing hook settings. It does not overwrite unrelated Claude or Codex configuration and never creates a Git remote for the vault.
@@ -31,6 +39,8 @@ materialized inside the vault as Obsidian notes.
 - Lifecycle hooks for visible-turn capture and bounded retrieval.
 - A dependency-free Python bridge.
 - Safe local Git commits for curated `Memory/` pages.
+- Open Knowledge Format v0.2 provenance, trust, lifecycle, freshness, migration,
+  and dependency-free structural validation.
 - Codex and Claude Code plugin manifests for distribution.
 
 See [the skill](skills/obsidian-memory/SKILL.md) for operating rules and [setup reference](skills/obsidian-memory/references/setup.md) for details.

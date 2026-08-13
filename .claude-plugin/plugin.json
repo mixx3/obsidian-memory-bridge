@@ -1,12 +1,12 @@
 {
   "name": "obsidian-memory-bridge",
-  "version": "0.1.0",
-  "description": "Local-first Obsidian memory for Codex and Claude Code.",
+  "version": "0.2.0",
+  "description": "Local-first OKF v0.2 Obsidian memory for Codex and Claude Code.",
   "author": {
-    "name": "parfenovma"
+    "name": "mixx3"
   },
-  "homepage": "https://github.com/parfenovma/obsidian-memory-bridge",
-  "repository": "https://github.com/parfenovma/obsidian-memory-bridge",
+  "homepage": "https://github.com/mixx3/obsidian-memory-bridge",
+  "repository": "https://github.com/mixx3/obsidian-memory-bridge",
   "license": "MIT",
-  "keywords": ["obsidian", "memory", "codex", "claude-code", "hooks"]
+  "keywords": ["obsidian", "memory", "okf", "codex", "claude-code", "hooks"]
 }
