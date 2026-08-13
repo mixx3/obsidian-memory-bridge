@@ -39,6 +39,16 @@ AGENT_META = {
     },
 }
 
+DEFAULT_VAULT_NAME = "ObsidianMemory"
+CLOUD_PATH_MARKERS = (
+    "dropbox",
+    "google drive",
+    "icloud",
+    "onedrive",
+    "yandex.disk",
+    "yandex disk",
+)
+
 
 def timestamp() -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -50,6 +60,49 @@ def parse_agents(value: str) -> list[str]:
     if invalid or not agents:
         raise argparse.ArgumentTypeError("agents must be codex, claude, or codex,claude")
     return agents
+
+
+def detected_agents(home: Path) -> list[str]:
+    detected = [
+        agent
+        for agent, meta in AGENT_META.items()
+        if (home.expanduser() / Path(str(meta["config"])).parent).exists()
+        or shutil.which(agent) is not None
+    ]
+    return detected or list(AGENT_META)
+
+
+def prompt_value(label: str, default: str) -> str:
+    rendered = input(f"{label} [{default}]: ").strip()
+    return rendered or default
+
+
+def prompt_agents(default: list[str]) -> list[str]:
+    rendered_default = ",".join(default)
+    while True:
+        value = prompt_value("Agents (codex, claude, or codex,claude)", rendered_default)
+        try:
+            return parse_agents(value)
+        except argparse.ArgumentTypeError as error:
+            print(f"Invalid selection: {error}")
+
+
+def prompt_yes_no(label: str, default: bool) -> bool:
+    suffix = "Y/n" if default else "y/N"
+    while True:
+        answer = input(f"{label} [{suffix}]: ").strip().casefold()
+        if not answer:
+            return default
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+        print("Please answer y or n.")
+
+
+def looks_cloud_synced(path: Path) -> bool:
+    folded = str(path.expanduser()).casefold()
+    return any(marker in folded for marker in CLOUD_PATH_MARKERS)
 
 
 def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
@@ -445,14 +498,72 @@ def doctor(home: Path, agents: list[str]) -> int:
     return 1 if failures else 0
 
 
+def print_next_steps(agents: list[str], dry_run: bool) -> None:
+    if dry_run:
+        print("\nDry run complete. Rerun without --dry-run to apply this setup.")
+        return
+    labels = " and ".join(AGENT_META[agent]["label"] for agent in agents)
+    print("\nSetup complete.")
+    print(f"1. Start a new {labels} task so the installed skill and hooks are loaded.")
+    if "codex" in agents:
+        print("2. In Codex, review and trust the new command hooks if prompted.")
+    else:
+        print("2. Restart Claude Code if it was open while the skill was installed.")
+    print("3. Ask a harmless question, then ask about the same fact in a new task.")
+    print(
+        "4. Daily curation is separate: schedule exactly one local agent task "
+        "whose prompt contains #obsidian-curate-daily."
+    )
+    print("   Do not schedule one curator per agent against the same vault.")
+
+
+def interactive_setup(home: Path) -> int:
+    home = home.expanduser().resolve()
+    print("Obsidian Memory Bridge interactive setup")
+    print("A skill install alone does not enable automatic memory.")
+    print("This setup installs the runtime, lifecycle hooks, skill, and vault config.\n")
+
+    default_vault = home / DEFAULT_VAULT_NAME
+    vault = Path(prompt_value("Local Obsidian vault path", str(default_vault))).expanduser()
+    if looks_cloud_synced(vault):
+        print(f"Warning: {vault} looks like a cloud-synced path.")
+        if not prompt_yes_no("Continue with this path", False):
+            print("Setup cancelled. Choose a local path and run the installer again.")
+            return 1
+    agents = prompt_agents(detected_agents(home))
+    use_git = prompt_yes_no("Initialize local Git history for curated memory", True)
+
+    print("\nPlanned changes (nothing has been written yet):")
+    install(home, vault, agents, dry_run=True, use_git=use_git)
+    if not prompt_yes_no("Apply this setup", True):
+        print("Setup cancelled; no changes were written.")
+        return 0
+
+    result = install(home, vault, agents, dry_run=False, use_git=use_git)
+    if result == 0:
+        print_next_steps(agents, dry_run=False)
+    return result
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vault", type=Path)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "Run without arguments in a terminal for interactive setup. "
+            "Installing the skill alone does not configure automatic capture or retrieval."
+        ),
+    )
+    parser.add_argument("--vault", type=Path, help="local Obsidian vault path")
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("--agents", type=parse_agents, default=parse_agents("codex,claude"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--init-git", action="store_true")
     parser.add_argument("--doctor", action="store_true")
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="force the setup wizard even when standard input is not a terminal",
+    )
     return parser
 
 
@@ -461,9 +572,23 @@ def main() -> int:
     if args.doctor:
         return doctor(args.home, args.agents)
     if args.vault is None:
-        print("--vault is required unless --doctor is used", file=sys.stderr)
+        if args.interactive or sys.stdin.isatty():
+            try:
+                return interactive_setup(args.home)
+            except (EOFError, KeyboardInterrupt):
+                print("\nSetup cancelled; no changes were written.", file=sys.stderr)
+                return 130
+        print(
+            "--vault is required in non-interactive mode. Run this command in a terminal "
+            "for the setup wizard, or pass --vault explicitly. Installing the skill alone "
+            "does not configure automatic memory.",
+            file=sys.stderr,
+        )
         return 2
-    return install(args.home, args.vault, args.agents, args.dry_run, args.init_git)
+    result = install(args.home, args.vault, args.agents, args.dry_run, args.init_git)
+    if result == 0:
+        print_next_steps(args.agents, args.dry_run)
+    return result
 
 
 if __name__ == "__main__":

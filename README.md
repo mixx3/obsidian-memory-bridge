@@ -11,13 +11,37 @@ intended for Git.
 
 ## Quick start
 
+Clone the repository and run the interactive setup:
+
 ```bash
 git clone https://github.com/mixx3/obsidian-memory-bridge.git
 cd obsidian-memory-bridge
+python3 scripts/install.py
+```
+
+The wizard asks for a local vault path, which agents to connect, and whether to
+initialize local Git history. It previews every target before writing. For
+unattended setup, pass the choices explicitly:
+
+```bash
 python3 scripts/install.py --vault /absolute/path/to/your-vault --agents codex,claude --dry-run
 python3 scripts/install.py --vault /absolute/path/to/your-vault --agents codex,claude --init-git
 python3 scripts/install.py --doctor
 ```
+
+> [!IMPORTANT]
+> Installing or copying `skills/obsidian-memory/` by itself does **not** enable
+> automatic memory. A skill supplies agent instructions; the installer also
+> deploys the local runtime, configures lifecycle hooks, and records the vault
+> path. Run the installer once on every machine that should access the vault.
+
+After installation, start a new Codex or Claude Code task. Review and trust the
+new command hooks if Codex prompts you. Capture and retrieval then run before
+and after ordinary turns without requiring an explicit skill invocation.
+
+Daily consolidation is intentionally separate from installation. Schedule
+exactly one local agent task whose prompt contains `#obsidian-curate-daily`.
+Do not run one curator per agent against the same vault.
 
 Existing curated memories can be migrated with a recoverable backup:
 

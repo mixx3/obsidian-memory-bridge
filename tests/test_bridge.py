@@ -328,6 +328,45 @@ class BridgeTests(unittest.TestCase):
             self.assertTrue(any(path.name == "codex-skill" for path in backups.rglob("*")))
             self.assertTrue(any("backup-old" in path.name for path in backups.rglob("*")))
 
+    def test_interactive_installer_bootstraps_automatic_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            vault = root / "Local Memory"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(INSTALL_PATH),
+                    "--home",
+                    str(home),
+                    "--interactive",
+                ],
+                input=f"{vault}\ncodex\n\n\n",
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("A skill install alone does not enable automatic memory", result.stdout)
+            self.assertIn("Planned changes (nothing has been written yet)", result.stdout)
+            self.assertIn("#obsidian-curate-daily", result.stdout)
+            self.assertTrue((vault / "Memory/index.md").is_file())
+            self.assertTrue((vault / ".git").is_dir())
+            self.assertTrue((home / ".agents/skills/obsidian-memory/SKILL.md").is_file())
+            self.assertTrue((home / ".codex/hooks.json").is_file())
+            self.assertFalse((home / ".claude/settings.json").exists())
+
+    def test_noninteractive_install_explains_that_skill_only_is_not_enough(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run(
+                [sys.executable, str(INSTALL_PATH), "--home", temporary],
+                input="",
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("--vault is required in non-interactive mode", result.stderr)
+            self.assertIn("skill alone", result.stderr)
+
     def test_curation_commit_leaves_unrelated_change_unstaged(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

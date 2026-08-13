@@ -1,6 +1,6 @@
 {
   "name": "obsidian-memory-bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local-first OKF v0.2 Obsidian memory for Codex and Claude Code.",
   "author": {
     "name": "mixx3"

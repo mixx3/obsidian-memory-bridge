@@ -803,7 +803,7 @@ def build_curation_context(config: Config) -> tuple[str, str, list[str]]:
         "Обновляй только долговременные факты, проекты, решения, предпочтения и процессы.",
         "Memory/ является bundle Open Knowledge Format v0.2.",
         "Для каждой concept-page сохраняй type, title, description и status: draft|stable|deprecated.",
-        "На содержательное изменение ставь generated.by=obsidian-memory-bridge/0.2.0 и generated.at в ISO 8601.",
+        "На содержательное изменение ставь generated.by=obsidian-memory-bridge/0.2.1 и generated.at в ISO 8601.",
         "Не создавай verified: его добавляет только реальная человеческая или детерминированная проверка.",
         "Каждое долговременное утверждение должно иметь sources с id, resource и title; для точных claims используй footnotes с тем же id.",
         "Для временных фактов ставь абсолютную дату stale_after; не выдумывай срок для вечных концепций.",

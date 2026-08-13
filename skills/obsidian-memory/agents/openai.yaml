@@ -1,4 +1,4 @@
 interface:
   display_name: "Obsidian Memory Bridge"
   short_description: "Локальная OKF-память для Codex и Claude"
-  default_prompt: "Use $obsidian-memory to set up, validate, or migrate a local OKF v0.2 Obsidian memory for Codex and Claude Code."
+  default_prompt: "Use $obsidian-memory to run interactive setup or diagnose a local OKF v0.2 memory for Codex and Claude Code."

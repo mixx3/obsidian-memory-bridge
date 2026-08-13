@@ -1,6 +1,26 @@
 # Setup reference
 
-## Install both agents
+## Installation boundary
+
+Installing this skill alone provides operating instructions but does not enable
+automatic memory. Automatic capture and retrieval additionally require the
+bridge runtime, per-agent config with an explicit vault path, and lifecycle
+hooks. Run the repository installer once on every machine that should access
+the vault.
+
+## Interactive setup
+
+From the repository root, run:
+
+```bash
+python3 scripts/install.py
+```
+
+The wizard asks for a local vault, connected agents, and local Git history. It
+prints a dry-run plan and requires confirmation before writing. It warns before
+using a path that looks cloud-synced.
+
+## Unattended setup
 
 From the repository root:
 
@@ -24,6 +44,11 @@ Add `--init-git` only when the user requests local Git history. The installer ne
 - Adds raw chat directories, state, and archives to `.gitignore`.
 
 Existing JSON settings are backed up before mutation. Hook groups unrelated to Obsidian Memory Bridge are preserved.
+
+After installation, start a new task so the skill and hooks are loaded. Codex
+may require the user to review and trust the new command hooks. Installing the
+bridge does not create a cloud sync connection or expose the vault to another
+machine.
 
 ## Hook contract
 
@@ -64,6 +89,10 @@ The curator writes OKF v0.2 concepts, never invents `verified`, records source
 provenance, and appends an entry to the hook-managed `Memory/log.md`.
 
 Do not run two daily curators against the same vault. Capture and retrieval may run concurrently; curation is the single-writer consolidation step.
+
+The installer prints this scheduler instruction but does not silently create a
+product-specific automation. Configure it in the local agent or operating
+system that will remain able to access the vault.
 
 ## Troubleshooting
 

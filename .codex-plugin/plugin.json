@@ -1,6 +1,6 @@
 {
   "name": "obsidian-memory-bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local-first OKF v0.2 Obsidian memory for Codex and Claude Code.",
   "author": {
     "name": "mixx3"
@@ -17,6 +17,6 @@
     "developerName": "mixx3",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
-    "defaultPrompt": "Set up Obsidian Memory Bridge for this machine."
+    "defaultPrompt": "Run the interactive Obsidian Memory Bridge setup for this machine."
   }
 }
