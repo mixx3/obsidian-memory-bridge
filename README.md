@@ -2,6 +2,9 @@
 
 Local-first, auditable OKF v0.2 memory shared by Codex and Claude Code.
 
+This repository includes a [Codex plugin manifest](.codex-plugin/plugin.json)
+alongside the shared agent skill and local runtime.
+
 It archives only visible user/assistant turns to an Obsidian vault, synchronizes
 local Codex desktop sessions before scheduled curation, retrieves a small
 amount of relevant context for later prompts, curates durable linked entities
